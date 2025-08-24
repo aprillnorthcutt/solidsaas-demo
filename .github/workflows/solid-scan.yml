@@ -47,8 +47,8 @@ jobs:
             const body = `
 SolidSaaS scan complete.
 
-📄 Report uploaded as GitHub Actions artifact  
-🔗 [Download reports (.json, .html, .pdf)](${artifactUrl})
+Report uploaded as GitHub Actions artifact  
+Download reports (JSON, HTML, PDF): ${artifactUrl}
 `;
 
             github.rest.issues.createComment({
