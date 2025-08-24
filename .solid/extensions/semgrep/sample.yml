@@ -1,0 +1,5 @@
+rules:
+  - id: insecure-sql-query
+    pattern: SqlCommand("SELECT * FROM Users WHERE Name = '+", ...)
+    message: Avoid raw string concatenation in SQL queries
+    severity: ERROR
