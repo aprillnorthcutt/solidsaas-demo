@@ -3,3 +3,5 @@ rules:
     pattern: SqlCommand("SELECT * FROM Users WHERE Name = '+", ...)
     message: Avoid raw string concatenation in SQL queries
     severity: ERROR
+    languages: [csharp]
+
