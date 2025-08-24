@@ -23,8 +23,8 @@ jobs:
 
       - name: Run Semgrep (JSON + HTML)
         run: |
-          semgrep --config .solid/extensions/semgrep --json > semgrep-results.json
-          semgrep --config .solid/extensions/semgrep --html > semgrep-report.html
+          semgrep scan --config .solid/extensions/semgrep --json > semgrep-results.json
+          semgrep scan --config .solid/extensions/semgrep --html > semgrep-report.html
 
       - name: Upload Semgrep Artifacts
         uses: actions/upload-artifact@v4
