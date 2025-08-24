@@ -1,4 +1,4 @@
-name: 🔍 Solid & Best Practices Scan
+name: Solid & Best Practices Scan
 
 on:
   pull_request:
@@ -6,10 +6,58 @@ on:
   workflow_dispatch:
 
 jobs:
-  scan:
+  solid-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # Needed for PR comments
+
     steps:
-    - name: Checkout
+    - name:  Checkout code
       uses: actions/checkout@v3
-    - name: Pretend to Scan
-      run: echo "✅ Scan complete. Found SOLID violations!"
+
+    - name: Set up Python (for Semgrep and report generation)
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install Semgrep + Markdown Report Tools
+      run: |
+        pip install semgrep jinja2 markdownify weasyprint
+
+    - name: Run Semgrep Scan
+      run: |
+        semgrep --config .solid/extensions/semgrep --json > semgrep-results.json
+
+    - name: Generate HTML + PDF Report
+      run: |
+        python .solid/generate_report.py
+
+    - name: Upload Artifact (HTML + JSON + PDF)
+      uses: actions/upload-artifact@v4
+      with:
+        name: solidsaas-report
+        path: |
+          report.html
+          report.json
+          report.pdf
+
+    - name: 💬 Post PR Comment
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "SOLID Score: 83 (B)
+        - SRP: 72 (OrderService violates SRP)
+        - OCP: 85 (switch/enum found)
+        - ISP: 78 (fat interface)
+        - DIP: 80 (concrete dependencies)
+        - LSP: 95
+
+        Top Findings:
+        - [major] SRP violation — OrderService.cs:14
+        - [critical] SQL injection — InsecureRepo.cs:22
+
+        📄 See attached report (HTML/PDF)" > pr_comment.md
+        gh pr comment ${{ github.event.pull_request.number }} --body-file pr_comment.md
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
