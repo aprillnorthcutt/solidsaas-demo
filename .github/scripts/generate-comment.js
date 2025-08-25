@@ -1,6 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 
+// Environment variables
 const githubToken = process.env.GITHUB_TOKEN;
 const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const prNumber = event.pull_request.number;
@@ -8,7 +9,9 @@ const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 const runId = process.env.GITHUB_RUN_ID;
 const artifactUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
 
+// Load and parse the Semgrep report
 const report = JSON.parse(fs.readFileSync("semgrep-results.json", "utf8"));
+const results = report.results || [];
 
 let scores = {
   SRP: 100,
@@ -20,26 +23,33 @@ let scores = {
 
 let findings = [];
 
-for (const result of report.results || []) {
-  const rule = result.check_id.toLowerCase();
+for (const result of results) {
+  const message = result.message || "Unknown";
+  const severity = (result.severity || "UNKNOWN").toUpperCase();
+  const ruleId = result.check_id || "unknown-rule";
+  const shortRule = ruleId.replace(/^.*semgrep[./]/, "");  // Strip prefix
+  const file = result.path || "unknown";
+  const line = result.start?.line || 0;
 
-  if (rule.includes("srp")) scores.SRP -= 10;
-  if (rule.includes("ocp")) scores.OCP -= 10;
-  if (rule.includes("lsp")) scores.LSP -= 10;
-  if (rule.includes("isp")) scores.ISP -= 10;
-  if (rule.includes("dip")) scores.DIP -= 10;
+  // Adjust scores based on rule ID
+  if (shortRule.includes("srp")) scores.SRP -= 10;
+  if (shortRule.includes("ocp")) scores.OCP -= 10;
+  if (shortRule.includes("lsp")) scores.LSP -= 10;
+  if (shortRule.includes("isp")) scores.ISP -= 10;
+  if (shortRule.includes("dip")) scores.DIP -= 10;
 
-  if (result.severity === "ERROR") {
+  // Penalize further for high severity
+  if (severity === "ERROR" || severity === "CRITICAL") {
     for (let key in scores) scores[key] -= 1;
   }
 
-  findings.push(`- [${result.severity}] ${result.message} — \`${result.path}:${result.start.line}\``);
+  findings.push(`- [${severity}] ${message} — \`${file}:${line}\` (Rule: ${shortRule})`);
 }
 
-const overall = Math.round(
-  Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length
-);
+// Compute overall average
+const overall = Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / 5);
 
+// Format comment body
 const body = [
   `✅ **SolidSaaS Scan Complete**`,
   ``,
@@ -51,11 +61,12 @@ const body = [
   `- DIP: ${scores.DIP}`,
   ``,
   `**Top Findings:**`,
-  ...findings.slice(0, 5),
+  findings.length > 0 ? findings.slice(0, 5).join("\n") : "*No violations found*",
   ``,
   `[📎 Download report artifact](${artifactUrl})`
 ].join("\n");
 
+// Post comment to PR
 const data = JSON.stringify({ body });
 
 const options = {
