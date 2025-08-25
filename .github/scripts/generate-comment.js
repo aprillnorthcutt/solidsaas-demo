@@ -1,12 +1,12 @@
 const fs = require("fs");
 const https = require("https");
 
-// Pull necessary environment variables
+// Environment variables from GitHub Actions
 const githubToken = process.env.GITHUB_TOKEN;
-const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-const prNumber = event.pull_request.number;
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 const runId = process.env.GITHUB_RUN_ID;
+const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+const prNumber = event.pull_request.number;
 const artifactUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
 
 // Load Semgrep results
@@ -21,47 +21,54 @@ try {
 const report = JSON.parse(rawData);
 const findings = report.results || [];
 
+// Initialize SOLID principle scores
 let scores = { SRP: 100, OCP: 100, LSP: 100, ISP: 100, DIP: 100 };
 let messages = [];
 
+// Analyze findings
 for (const result of findings) {
-  const principle = result.extra?.metadata?.principle?.toUpperCase() || "";
-  const message = result.extra?.message || "No message provided";
+  const msg = result.extra?.message || "Unspecified rule";
+  const principle = result.extra?.metadata?.principle?.toUpperCase?.() || null;
   const severity = result.extra?.severity || "Unknown";
-  const ruleId = result.check_id?.replace(/^.*semgrep\./, "") || "Unspecified rule";
+  const file = result.path;
+  const line = result.start?.line || 0;
 
-  // Adjust scores based on principle name
-  if (principle && scores[principle] !== undefined) {
+  // Apply scoring deduction
+  if (principle && scores.hasOwnProperty(principle)) {
     scores[principle] -= 10;
   }
+  if (severity === "ERROR") {
+    for (let key in scores) scores[key] -= 1;
+  }
 
-  messages.push(`- [${severity}] ${message} — \`${result.path}:${result.start.line}\``);
+  // Format finding summary
+  messages.push(`- [${severity}] ${msg} — \`${file}:${line}\``);
 }
 
-// Calculate overall score
+// Compute average score
 const totalScore = Math.round(
-  Object.values(scores).reduce((a, b) => a + b, 0) / 5
+  Object.values(scores).reduce((sum, val) => sum + val, 0) / 5
 );
 
-// Format the body text for the PR comment
-const bodyText = [
-  "**SolidSaaS Scan Complete**",
-  "",
-  `**Estimated SOLID Score:** ${totalScore}`,
-  `- SRP: ${scores.SRP}`,
-  `- OCP: ${scores.OCP}`,
-  `- LSP: ${scores.LSP}`,
-  `- ISP: ${scores.ISP}`,
-  `- DIP: ${scores.DIP}`,
-  "",
-  "**Top Findings:**",
+// Build the comment body
+const commentBody = [
+  `SolidSaaS Scan Complete`,
+  ``,
+  `Estimated SOLID Score: ${totalScore}`,
+  `SRP: ${scores.SRP}`,
+  `OCP: ${scores.OCP}`,
+  `LSP: ${scores.LSP}`,
+  `ISP: ${scores.ISP}`,
+  `DIP: ${scores.DIP}`,
+  ``,
+  `Top Findings:`,
   messages.length ? messages.slice(0, 5).join("\n") : "- No violations found.",
-  "",
-  `[Download report artifacts](${artifactUrl})`
+  ``,
+  `Download report artifacts: ${artifactUrl}`
 ].join("\n");
 
-// Prepare HTTP request to GitHub API
-const data = JSON.stringify({ body: bodyText });
+// Send comment to GitHub PR
+const payload = JSON.stringify({ body: commentBody });
 
 const options = {
   hostname: "api.github.com",
@@ -71,7 +78,7 @@ const options = {
     Authorization: `Bearer ${githubToken}`,
     "User-Agent": "solid-saas-bot",
     "Content-Type": "application/json",
-    "Content-Length": data.length
+    "Content-Length": Buffer.byteLength(payload)
   }
 };
 
@@ -84,5 +91,5 @@ req.on("error", (error) => {
   console.error("Failed to post comment:", error);
 });
 
-req.write(data);
+req.write(payload);
 req.end();
