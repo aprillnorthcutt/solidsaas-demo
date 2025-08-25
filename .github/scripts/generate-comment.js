@@ -1,6 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 
+// Load required environment variables
 const githubToken = process.env.GITHUB_TOKEN;
 const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const prNumber = event.pull_request.number;
@@ -20,15 +21,16 @@ try {
 const report = JSON.parse(rawData);
 const findings = report.results || [];
 
+// Initialize SOLID principle scores
 let scores = { SRP: 100, OCP: 100, LSP: 100, ISP: 100, DIP: 100 };
 let messages = [];
 
+// Process findings and adjust scores
 for (const result of findings) {
   const message = result.message?.toLowerCase() || "";
-  const severity = result.severity || "Unknown";
+  const severity = result.severity || "UNKNOWN";
   const ruleId = result.check_id?.replace(/^.*semgrep\./, "") || "Unspecified rule";
 
-  // Adjust scores
   if (message.includes("srp")) scores.SRP -= 10;
   if (message.includes("ocp")) scores.OCP -= 10;
   if (message.includes("lsp")) scores.LSP -= 10;
@@ -42,24 +44,26 @@ const totalScore = Math.round(
   Object.values(scores).reduce((a, b) => a + b, 0) / 5
 );
 
-// Comment body
+// Compose the comment body
 const bodyText = [
-  `✅ **SolidSaaS Scan Complete**`,
-  ``,
+  "**SolidSaaS Scan Complete**",
+  "",
   `**Estimated SOLID Score:** ${totalScore}`,
   `- SRP: ${scores.SRP}`,
   `- OCP: ${scores.OCP}`,
   `- LSP: ${scores.LSP}`,
   `- ISP: ${scores.ISP}`,
   `- DIP: ${scores.DIP}`,
-  ``,
-  `**Top Findings:**`,
+  "",
+  "**Top Findings:**",
   messages.length ? messages.slice(0, 5).join("\n") : "- No violations found.",
-  ``,
-  `📎 [Download report artifacts](${artifactUrl})`
+  "",
+  `[Download report artifacts](${artifactUrl})`
 ].join("\n");
 
-// POST to GitHub
+console.log("Comment Body:\n", bodyText);
+
+// Send comment via GitHub API
 const data = JSON.stringify({ body: bodyText });
 
 const options = {
@@ -70,7 +74,7 @@ const options = {
     Authorization: `Bearer ${githubToken}`,
     "User-Agent": "solid-saas-bot",
     "Content-Type": "application/json",
-    "Content-Length": data.length
+    "Content-Length": Buffer.byteLength(data)
   }
 };
 
