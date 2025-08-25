@@ -1,15 +1,16 @@
 const fs = require("fs");
-const core = require("@actions/core");
-const github = require("@actions/github");
+const https = require("https");
 
-// Get PR and repo info
-const prNumber = github.context.payload.pull_request.number;
-const runId = github.context.runId;
-const repo = github.context.repo;
-const artifactUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
+// Pull necessary environment variables
+const githubToken = process.env.GITHUB_TOKEN;
+const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+const prNumber = event.pull_request.number;
+const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
+const runId = process.env.GITHUB_RUN_ID;
+const artifactUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
 
 // Read and parse the Semgrep JSON report
-const report = JSON.parse(fs.readFileSync("semgrep-results.json", "utf-8"));
+const report = JSON.parse(fs.readFileSync("semgrep-results.json", "utf8"));
 
 // Initialize scores
 let scores = {
@@ -22,7 +23,7 @@ let scores = {
 
 let findings = [];
 
-// Parse results and adjust scores
+// Process findings
 for (const result of report.results) {
   const msg = result.message.toLowerCase();
   if (msg.includes("srp")) scores.SRP -= 10;
@@ -32,18 +33,18 @@ for (const result of report.results) {
   if (msg.includes("dip")) scores.DIP -= 10;
 
   if (result.severity === "ERROR") {
-    for (let key in scores) scores[key] -= 1; // Penalize all slightly
+    for (let key in scores) scores[key] -= 1;
   }
 
   findings.push(`- [${result.severity}] ${result.message} — \`${result.path}:${result.start.line}\``);
 }
 
-// Compute overall average
+// Calculate overall average
 const overall = Math.round(
   Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length
 );
 
-// Compose comment
+// Compose the comment body
 const body = [
   `✅ **SolidSaaS Scan Complete**`,
   ``,
@@ -60,10 +61,29 @@ const body = [
   `[📎 Download report artifact](${artifactUrl})`
 ].join("\n");
 
-// Post comment to PR
-github.getOctokit(process.env.GITHUB_TOKEN).rest.issues.createComment({
-  issue_number: prNumber,
-  owner: repo.owner,
-  repo: repo.repo,
-  body: body
+// Create the GitHub comment via API
+const data = JSON.stringify({ body });
+
+const options = {
+  hostname: "api.github.com",
+  path: `/repos/${owner}/${repo}/issues/${prNumber}/comments`,
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${githubToken}`,
+    "User-Agent": "solid-saas-bot",
+    "Content-Type": "application/json",
+    "Content-Length": data.length
+  }
+};
+
+const req = https.request(options, (res) => {
+  console.log(`GitHub API response status: ${res.statusCode}`);
+  res.on("data", d => process.stdout.write(d));
 });
+
+req.on("error", (error) => {
+  console.error("Failed to post comment:", error);
+});
+
+req.write(data);
+req.end();
