@@ -9,60 +9,59 @@ const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 const runId = process.env.GITHUB_RUN_ID;
 const artifactUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
 
-// Read and parse the Semgrep JSON report
-const report = JSON.parse(fs.readFileSync("semgrep-results.json", "utf8"));
-
-// Initialize scores
-let scores = {
-  SRP: 100,
-  OCP: 100,
-  LSP: 100,
-  ISP: 100,
-  DIP: 100
-};
-
-let findings = [];
-
-// Process findings
-for (const result of report.results) {
-  const msg = result.message.toLowerCase();
-  if (msg.includes("srp")) scores.SRP -= 10;
-  if (msg.includes("ocp")) scores.OCP -= 10;
-  if (msg.includes("lsp")) scores.LSP -= 10;
-  if (msg.includes("isp")) scores.ISP -= 10;
-  if (msg.includes("dip")) scores.DIP -= 10;
-
-  if (result.severity === "ERROR") {
-    for (let key in scores) scores[key] -= 1;
-  }
-
-  findings.push(`- [${result.severity}] ${result.message} — \`${result.path}:${result.start.line}\``);
+// Load Semgrep results
+let rawData;
+try {
+  rawData = fs.readFileSync("semgrep-results.json", "utf8");
+} catch (err) {
+  console.error("Failed to read semgrep-results.json:", err);
+  process.exit(1);
 }
 
-// Calculate overall average
-const overall = Math.round(
-  Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length
+const report = JSON.parse(rawData);
+const findings = report.results || [];
+
+let scores = { SRP: 100, OCP: 100, LSP: 100, ISP: 100, DIP: 100 };
+let messages = [];
+
+for (const result of findings) {
+  const principle = result.extra?.metadata?.principle?.toUpperCase() || "";
+  const message = result.extra?.message || "No message provided";
+  const severity = result.extra?.severity || "Unknown";
+  const ruleId = result.check_id?.replace(/^.*semgrep\./, "") || "Unspecified rule";
+
+  // Adjust scores based on principle name
+  if (principle && scores[principle] !== undefined) {
+    scores[principle] -= 10;
+  }
+
+  messages.push(`- [${severity}] ${message} — \`${result.path}:${result.start.line}\``);
+}
+
+// Calculate overall score
+const totalScore = Math.round(
+  Object.values(scores).reduce((a, b) => a + b, 0) / 5
 );
 
-// Compose the comment body
-const body = [
-  `✅ **SolidSaaS Scan Complete**`,
-  ``,
-  `**Estimated SOLID Score:** ${overall}`,
+// Format the body text for the PR comment
+const bodyText = [
+  "**SolidSaaS Scan Complete**",
+  "",
+  `**Estimated SOLID Score:** ${totalScore}`,
   `- SRP: ${scores.SRP}`,
   `- OCP: ${scores.OCP}`,
   `- LSP: ${scores.LSP}`,
   `- ISP: ${scores.ISP}`,
   `- DIP: ${scores.DIP}`,
-  ``,
-  `**Top Findings:**`,
-  ...findings.slice(0, 5),
-  ``,
-  `[📎 Download report artifact](${artifactUrl})`
+  "",
+  "**Top Findings:**",
+  messages.length ? messages.slice(0, 5).join("\n") : "- No violations found.",
+  "",
+  `[Download report artifacts](${artifactUrl})`
 ].join("\n");
 
-// Create the GitHub comment via API
-const data = JSON.stringify({ body });
+// Prepare HTTP request to GitHub API
+const data = JSON.stringify({ body: bodyText });
 
 const options = {
   hostname: "api.github.com",
@@ -77,7 +76,7 @@ const options = {
 };
 
 const req = https.request(options, (res) => {
-  console.log(`GitHub API response status: ${res.statusCode}`);
+  console.log(`GitHub API response: ${res.statusCode}`);
   res.on("data", d => process.stdout.write(d));
 });
 
