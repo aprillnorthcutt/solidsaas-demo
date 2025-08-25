@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install semgrep
+          pip install semgrep jinja2 weasyprint markdownify
           sudo apt-get install -y wkhtmltopdf
           npm install @actions/core @actions/github
 
@@ -32,15 +32,13 @@ jobs:
         run: |
           semgrep scan --config .solid/extensions/semgrep --json > semgrep-results.json
 
-      - name: Generate HTML and PDF Reports
+      - name: Generate HTML, JSON, and PDF Reports
         run: |
-          mkdir -p reports
-          python .solid/scripts/convert_report.py semgrep-results.json reports/semgrep-report.html
-          wkhtmltopdf reports/semgrep-report.html reports/semgrep-report.pdf
+          python generate_report.py
 
       - name: Bundle Reports into ZIP
         run: |
-          zip solidsaas-report.zip semgrep-results.json reports/semgrep-report.html reports/semgrep-report.pdf
+          zip solidsaas-report.zip semgrep-results.json report.html report.json report.pdf
 
       - name: Upload Semgrep Report ZIP
         uses: actions/upload-artifact@v4
@@ -54,12 +52,14 @@ jobs:
           node-version: 18
 
       - name: Comment PR with Scores
-        run: node .github/scripts/generate-comment.js
+        run: |
+          cp $GITHUB_EVENT_PATH event.json
+          node .github/scripts/generate-comment.js
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_EVENT_PATH: event.json
 
       - name: Comment PR with Artifact Link
         uses: actions/github-script@v7
@@ -74,8 +74,9 @@ jobs:
               "",
               "All reports bundled in a downloadable ZIP:",
               "- semgrep-results.json",
-              "- semgrep-report.html",
-              "- semgrep-report.pdf",
+              "- report.html",
+              "- report.json",
+              "- report.pdf",
               "",
               `Download artifact: ${artifactUrl}`
             ].join("\n");
