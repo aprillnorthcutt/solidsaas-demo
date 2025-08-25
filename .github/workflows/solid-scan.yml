@@ -38,6 +38,19 @@ jobs:
             semgrep-report.html
             semgrep-report.pdf
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install GitHub Actions Toolkit
+        run: npm install @actions/core @actions/github
+
+      - name: Comment PR with Scores
+        run: node .github/scripts/generate-comment.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Comment PR with Artifact Link
         uses: actions/github-script@v7
         with:
@@ -59,4 +72,3 @@ jobs:
               repo: repo.repo,
               body: body
             });
-
