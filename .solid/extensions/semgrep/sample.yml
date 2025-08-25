@@ -1,7 +1,75 @@
 rules:
-  - id: insecure-sql-query
-    pattern: SqlCommand("SELECT * FROM Users WHERE Name = '+", ...)
-    message: Avoid raw string concatenation in SQL queries
-    severity: ERROR
+  # ──────────────── SOLID PRINCIPLES ────────────────
+
+  - id: srp-violation
     languages: [csharp]
+    message: SRP violation — class likely has multiple responsibilities
+    severity: WARNING
+    metadata:
+      principle: SRP
+    pattern-either:
+      - pattern: |
+          public class $CLASS {
+            public $RETURNTYPE1 $METHOD1(...) { ... }
+            public $RETURNTYPE2 $METHOD2(...) { ... }
+          }
+      - pattern: |
+          class $CLASS {
+            public $RETURNTYPE1 $METHOD1(...) { ... }
+            public $RETURNTYPE2 $METHOD2(...) { ... }
+          }
+
+  - id: ocp-violation
+    languages: [csharp]
+    message: OCP violation — use of switch/if on enums may indicate design rigidity
+    severity: WARNING
+    metadata:
+      principle: OCP
+    pattern-either:
+      - pattern: |
+          switch ($EXPR) {
+            ...
+          }
+      - pattern: |
+          if ($EXPR == $VAL) {
+            ...
+          }
+
+  - id: lsp-violation
+    languages: [csharp]
+    message: LSP violation — throwing NotImplementedException may violate LSP
+    severity: WARNING
+    metadata:
+      principle: LSP
+    pattern: throw new NotImplementedException();
+
+  - id: isp-violation
+    languages: [csharp]
+    message: ISP violation — interface has too many methods, consider splitting
+    severity: WARNING
+    metadata:
+      principle: ISP
+    pattern: |
+      public interface $IFACE {
+        public $RETURNTYPE1 $METHOD1(...);
+        public $RETURNTYPE2 $METHOD2(...);
+        public $RETURNTYPE3 $METHOD3(...);
+        ...
+      }
+
+  - id: dip-violation
+    languages: [csharp]
+    message: DIP violation — depends on concrete class instead of abstraction
+    severity: WARNING
+    metadata:
+      principle: DIP
+    pattern: new $CLASSNAME(...);
+
+  # ──────────────── SECURITY CHECK ────────────────
+
+  - id: insecure-sql-query
+    languages: [csharp]
+    message: Avoid raw string concatenation in SQL queries — risk of SQL injection
+    severity: ERROR
+    pattern: SqlCommand("SELECT * FROM Users WHERE Name = '+", ...)
 
