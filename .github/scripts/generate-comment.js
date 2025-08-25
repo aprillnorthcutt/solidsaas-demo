@@ -1,7 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 
-// Pull GitHub context from environment
+// Pull necessary environment variables
 const githubToken = process.env.GITHUB_TOKEN;
 const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const prNumber = event.pull_request.number;
@@ -10,9 +10,16 @@ const runId = process.env.GITHUB_RUN_ID;
 const artifactUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
 
 // Read and parse the Semgrep JSON report
-const report = JSON.parse(fs.readFileSync("semgrep-results.json", "utf8"));
+const reportPath = "semgrep-results.json";
+if (!fs.existsSync(reportPath)) {
+  console.error("semgrep-results.json not found.");
+  process.exit(1);
+}
 
-const scores = {
+const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+
+// Initialize SOLID principle scores
+let scores = {
   SRP: 100,
   OCP: 100,
   LSP: 100,
@@ -22,30 +29,39 @@ const scores = {
 
 let findings = [];
 
+// Process findings
 for (const result of report.results || []) {
-  const msg = result.message?.toLowerCase() || "";
-  const ruleId = result.check_id?.replace("solid.extensions.semgrep.", "") || "unknown-rule";
-  const severity = result.severity?.toUpperCase() || "UNKNOWN";
+  const message = result.message || "Unspecified rule";
+  const severity = result.severity || "UNKNOWN";
+  const file = result.path || "unknown file";
+  const line = result.start?.line ?? "?";
 
-  // Adjust scores based on message content
-  if (msg.includes("srp")) scores.SRP -= 10;
-  if (msg.includes("ocp")) scores.OCP -= 10;
-  if (msg.includes("lsp")) scores.LSP -= 10;
-  if (msg.includes("isp")) scores.ISP -= 10;
-  if (msg.includes("dip")) scores.DIP -= 10;
+  // Lowercase message to match principles
+  const msgLower = message.toLowerCase();
+  if (msgLower.includes("srp")) scores.SRP -= 10;
+  if (msgLower.includes("ocp")) scores.OCP -= 10;
+  if (msgLower.includes("lsp")) scores.LSP -= 10;
+  if (msgLower.includes("isp")) scores.ISP -= 10;
+  if (msgLower.includes("dip")) scores.DIP -= 10;
+
+  // Reduce all scores a bit if ERROR severity
   if (severity === "ERROR") {
-    for (const key of Object.keys(scores)) scores[key] -= 1;
+    for (let key in scores) scores[key] -= 1;
   }
 
-  findings.push(`- [${severity}] ${result.message} — \`${result.path}:${result.start?.line}\` (Rule: ${ruleId})`);
+  findings.push(`- [${severity}] ${message} — \`${file}:${line}\``);
 }
 
-const average = Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / 5);
+// Final score is average
+const overall = Math.round(
+  Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length
+);
 
-const commentBody = [
+// Construct the PR comment body
+const body = [
   `✅ **SolidSaaS Scan Complete**`,
   ``,
-  `**Estimated SOLID Score:** ${average}`,
+  `**Estimated SOLID Score:** ${overall}`,
   `- SRP: ${scores.SRP}`,
   `- OCP: ${scores.OCP}`,
   `- LSP: ${scores.LSP}`,
@@ -53,13 +69,13 @@ const commentBody = [
   `- DIP: ${scores.DIP}`,
   ``,
   `**Top Findings:**`,
-  ...(findings.length ? findings.slice(0, 5) : ["No violations found."]),
+  findings.length > 0 ? findings.slice(0, 5).join("\n") : "_No issues found._",
   ``,
-  `[📎 Download report artifact](${artifactUrl})`
+  `[📎 Download full report artifacts](${artifactUrl})`
 ].join("\n");
 
-// GitHub API call to post comment
-const payload = JSON.stringify({ body: commentBody });
+// Post comment to PR
+const data = JSON.stringify({ body });
 
 const options = {
   hostname: "api.github.com",
@@ -69,7 +85,7 @@ const options = {
     Authorization: `Bearer ${githubToken}`,
     "User-Agent": "solid-saas-bot",
     "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(payload)
+    "Content-Length": Buffer.byteLength(data)
   }
 };
 
@@ -82,5 +98,5 @@ req.on("error", (error) => {
   console.error("Failed to post comment:", error);
 });
 
-req.write(payload);
+req.write(data);
 req.end();
