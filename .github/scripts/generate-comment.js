@@ -1,7 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 
-// Load required environment variables
+// Load environment variables
 const githubToken = process.env.GITHUB_TOKEN;
 const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const prNumber = event.pull_request.number;
@@ -21,30 +21,30 @@ try {
 const report = JSON.parse(rawData);
 const findings = report.results || [];
 
-// Initialize SOLID principle scores
+// Initialize SOLID scores
 let scores = { SRP: 100, OCP: 100, LSP: 100, ISP: 100, DIP: 100 };
 let messages = [];
 
-// Process findings and adjust scores
 for (const result of findings) {
-  const message = result.message?.toLowerCase() || "";
-  const severity = result.severity || "UNKNOWN";
+  const message = result.extra?.message?.toLowerCase() || "";
+  const severity = result.extra?.severity || "UNKNOWN";
   const ruleId = result.check_id?.replace(/^.*semgrep\./, "") || "Unspecified rule";
 
+  // Adjust scores
   if (message.includes("srp")) scores.SRP -= 10;
   if (message.includes("ocp")) scores.OCP -= 10;
   if (message.includes("lsp")) scores.LSP -= 10;
   if (message.includes("isp")) scores.ISP -= 10;
   if (message.includes("dip")) scores.DIP -= 10;
 
-  messages.push(`- [${severity}] ${ruleId} — \`${result.path}:${result.start.line}\``);
+  messages.push(`- [${severity}] ${message} — \`${result.path}:${result.start.line}\``);
 }
 
 const totalScore = Math.round(
   Object.values(scores).reduce((a, b) => a + b, 0) / 5
 );
 
-// Compose the comment body
+// Compose the PR comment body
 const bodyText = [
   "**SolidSaaS Scan Complete**",
   "",
@@ -63,7 +63,7 @@ const bodyText = [
 
 console.log("Comment Body:\n", bodyText);
 
-// Send comment via GitHub API
+// Send comment to GitHub
 const data = JSON.stringify({ body: bodyText });
 
 const options = {
