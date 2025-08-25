@@ -36,15 +36,15 @@ jobs:
         run: |
           python generate_report.py
 
-      - name: Bundle Reports into ZIP
-        run: |
-          zip solidsaas-report.zip semgrep-results.json report.html report.json report.pdf
-
-      - name: Upload Semgrep Report ZIP
+      - name: Upload Semgrep Reports
         uses: actions/upload-artifact@v4
         with:
           name: solidsaas-report
-          path: solidsaas-report.zip
+          path: |
+            semgrep-results.json
+            report.html
+            report.json
+            report.pdf
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -72,7 +72,7 @@ jobs:
             const body = [
               "SolidSaaS scan complete.",
               "",
-              "All reports bundled in a downloadable ZIP:",
+              "All reports bundled as artifacts:",
               "- semgrep-results.json",
               "- report.html",
               "- report.json",
