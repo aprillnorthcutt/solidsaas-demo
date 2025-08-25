@@ -1,7 +1,7 @@
 const fs = require("fs");
 const https = require("https");
 
-// Load environment variables
+// Pull necessary environment variables
 const githubToken = process.env.GITHUB_TOKEN;
 const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const prNumber = event.pull_request.number;
@@ -21,30 +21,29 @@ try {
 const report = JSON.parse(rawData);
 const findings = report.results || [];
 
-// Initialize SOLID scores
 let scores = { SRP: 100, OCP: 100, LSP: 100, ISP: 100, DIP: 100 };
 let messages = [];
 
 for (const result of findings) {
-  const message = result.extra?.message?.toLowerCase() || "";
-  const severity = result.extra?.severity || "UNKNOWN";
+  const principle = result.extra?.metadata?.principle?.toUpperCase() || "";
+  const message = result.extra?.message || "No message provided";
+  const severity = result.extra?.severity || "Unknown";
   const ruleId = result.check_id?.replace(/^.*semgrep\./, "") || "Unspecified rule";
 
-  // Adjust scores
-  if (message.includes("srp")) scores.SRP -= 10;
-  if (message.includes("ocp")) scores.OCP -= 10;
-  if (message.includes("lsp")) scores.LSP -= 10;
-  if (message.includes("isp")) scores.ISP -= 10;
-  if (message.includes("dip")) scores.DIP -= 10;
+  // Adjust scores based on principle name
+  if (principle && scores[principle] !== undefined) {
+    scores[principle] -= 10;
+  }
 
   messages.push(`- [${severity}] ${message} — \`${result.path}:${result.start.line}\``);
 }
 
+// Calculate overall score
 const totalScore = Math.round(
   Object.values(scores).reduce((a, b) => a + b, 0) / 5
 );
 
-// Compose the PR comment body
+// Format the body text for the PR comment
 const bodyText = [
   "**SolidSaaS Scan Complete**",
   "",
@@ -61,9 +60,7 @@ const bodyText = [
   `[Download report artifacts](${artifactUrl})`
 ].join("\n");
 
-console.log("Comment Body:\n", bodyText);
-
-// Send comment to GitHub
+// Prepare HTTP request to GitHub API
 const data = JSON.stringify({ body: bodyText });
 
 const options = {
@@ -74,7 +71,7 @@ const options = {
     Authorization: `Bearer ${githubToken}`,
     "User-Agent": "solid-saas-bot",
     "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(data)
+    "Content-Length": data.length
   }
 };
 
