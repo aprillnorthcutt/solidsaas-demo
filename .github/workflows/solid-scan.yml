@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   solid-scan:
     runs-on: ubuntu-latest
@@ -18,21 +22,44 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install Semgrep
-        run: pip install semgrep
+      - name: Install dependencies
+        run: |
+          pip install semgrep jinja2 weasyprint markdownify
+          sudo apt-get install -y wkhtmltopdf
+          npm install @actions/core @actions/github
 
       - name: Run Semgrep (JSON only)
         run: |
           semgrep scan --config .solid/extensions/semgrep --json > semgrep-results.json
 
-      - name: Upload Semgrep Reports
+      - name: Generate HTML, JSON, and PDF Reports
+        run: |
+          python generate_report.py
+
+      - name: Bundle Reports into ZIP
+        run: |
+          zip solidsaas-report.zip semgrep-results.json report.html report.json report.pdf
+
+      - name: Upload Semgrep Report ZIP
         uses: actions/upload-artifact@v4
         with:
           name: solidsaas-report
-          path: |
-            semgrep-results.json
-            semgrep-report.html
-            semgrep-report.pdf
+          path: solidsaas-report.zip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Comment PR with Scores
+        run: |
+          cp $GITHUB_EVENT_PATH event.json
+          node .github/scripts/generate-comment.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_EVENT_PATH: event.json
 
       - name: Comment PR with Artifact Link
         uses: actions/github-script@v7
@@ -42,13 +69,17 @@ jobs:
             const runId = context.runId;
             const repo = context.repo;
             const artifactUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
-
-            const body = `
-SolidSaaS scan complete.
-
-Report uploaded as GitHub Actions artifact  
-Download reports (JSON, HTML, PDF): ${artifactUrl}
-`;
+            const body = [
+              "SolidSaaS scan complete.",
+              "",
+              "All reports bundled in a downloadable ZIP:",
+              "- semgrep-results.json",
+              "- report.html",
+              "- report.json",
+              "- report.pdf",
+              "",
+              `Download artifact: ${artifactUrl}`
+            ].join("\n");
 
             github.rest.issues.createComment({
               issue_number: prNumber,
