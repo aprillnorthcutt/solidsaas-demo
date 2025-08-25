@@ -34,7 +34,7 @@ jobs:
 
       - name: Generate HTML, JSON, and PDF Reports
         run: |
-          python .solid/scripts/generate_report.py
+          python generate_report.py
 
       - name: Bundle Reports into ZIP
         run: |
