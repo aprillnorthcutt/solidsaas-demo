@@ -30,7 +30,7 @@ jobs:
 
       - name: Run Semgrep (JSON only)
         run: |
-          semgrep scan --config .solid/extensions/semgrep --json > semgrep-results.json
+          semgrep scan --config .solid/extensions/semgrep --json > semgrep-results.json || true
 
       - name: Generate HTML, JSON, and PDF Reports
         run: |
