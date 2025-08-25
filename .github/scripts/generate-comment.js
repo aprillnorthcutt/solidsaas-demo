@@ -1,7 +1,6 @@
 const fs = require("fs");
 const https = require("https");
 
-// Pull necessary environment variables
 const githubToken = process.env.GITHUB_TOKEN;
 const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const prNumber = event.pull_request.number;
@@ -9,59 +8,45 @@ const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 const runId = process.env.GITHUB_RUN_ID;
 const artifactUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
 
-// Read and parse the Semgrep JSON report
-const reportPath = "semgrep-results.json";
-if (!fs.existsSync(reportPath)) {
-  console.error("semgrep-results.json not found.");
+// Load Semgrep results
+let rawData;
+try {
+  rawData = fs.readFileSync("semgrep-results.json", "utf8");
+} catch (err) {
+  console.error("Failed to read semgrep-results.json:", err);
   process.exit(1);
 }
 
-const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+const report = JSON.parse(rawData);
+const findings = report.results || [];
 
-// Initialize SOLID principle scores
-let scores = {
-  SRP: 100,
-  OCP: 100,
-  LSP: 100,
-  ISP: 100,
-  DIP: 100
-};
+let scores = { SRP: 100, OCP: 100, LSP: 100, ISP: 100, DIP: 100 };
+let messages = [];
 
-let findings = [];
+for (const result of findings) {
+  const message = result.message?.toLowerCase() || "";
+  const severity = result.severity || "Unknown";
+  const ruleId = result.check_id?.replace(/^.*semgrep\./, "") || "Unspecified rule";
 
-// Process findings
-for (const result of report.results || []) {
-  const message = result.message || "Unspecified rule";
-  const severity = result.severity || "UNKNOWN";
-  const file = result.path || "unknown file";
-  const line = result.start?.line ?? "?";
+  // Adjust scores
+  if (message.includes("srp")) scores.SRP -= 10;
+  if (message.includes("ocp")) scores.OCP -= 10;
+  if (message.includes("lsp")) scores.LSP -= 10;
+  if (message.includes("isp")) scores.ISP -= 10;
+  if (message.includes("dip")) scores.DIP -= 10;
 
-  // Lowercase message to match principles
-  const msgLower = message.toLowerCase();
-  if (msgLower.includes("srp")) scores.SRP -= 10;
-  if (msgLower.includes("ocp")) scores.OCP -= 10;
-  if (msgLower.includes("lsp")) scores.LSP -= 10;
-  if (msgLower.includes("isp")) scores.ISP -= 10;
-  if (msgLower.includes("dip")) scores.DIP -= 10;
-
-  // Reduce all scores a bit if ERROR severity
-  if (severity === "ERROR") {
-    for (let key in scores) scores[key] -= 1;
-  }
-
-  findings.push(`- [${severity}] ${message} — \`${file}:${line}\``);
+  messages.push(`- [${severity}] ${ruleId} — \`${result.path}:${result.start.line}\``);
 }
 
-// Final score is average
-const overall = Math.round(
-  Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length
+const totalScore = Math.round(
+  Object.values(scores).reduce((a, b) => a + b, 0) / 5
 );
 
-// Construct the PR comment body
-const body = [
+// Comment body
+const bodyText = [
   `✅ **SolidSaaS Scan Complete**`,
   ``,
-  `**Estimated SOLID Score:** ${overall}`,
+  `**Estimated SOLID Score:** ${totalScore}`,
   `- SRP: ${scores.SRP}`,
   `- OCP: ${scores.OCP}`,
   `- LSP: ${scores.LSP}`,
@@ -69,13 +54,13 @@ const body = [
   `- DIP: ${scores.DIP}`,
   ``,
   `**Top Findings:**`,
-  findings.length > 0 ? findings.slice(0, 5).join("\n") : "_No issues found._",
+  messages.length ? messages.slice(0, 5).join("\n") : "- No violations found.",
   ``,
-  `[📎 Download full report artifacts](${artifactUrl})`
+  `📎 [Download report artifacts](${artifactUrl})`
 ].join("\n");
 
-// Post comment to PR
-const data = JSON.stringify({ body });
+// POST to GitHub
+const data = JSON.stringify({ body: bodyText });
 
 const options = {
   hostname: "api.github.com",
@@ -85,12 +70,12 @@ const options = {
     Authorization: `Bearer ${githubToken}`,
     "User-Agent": "solid-saas-bot",
     "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(data)
+    "Content-Length": data.length
   }
 };
 
 const req = https.request(options, (res) => {
-  console.log(`GitHub API response status: ${res.statusCode}`);
+  console.log(`GitHub API response: ${res.statusCode}`);
   res.on("data", d => process.stdout.write(d));
 });
 
