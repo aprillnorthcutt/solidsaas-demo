@@ -42,10 +42,12 @@ jobs:
             const runId = context.runId;
             const repo = context.repo;
             const artifactUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
-            const body = `SolidSaaS scan complete.
-
-Report uploaded as GitHub Actions artifact  
-Download reports (JSON, HTML, PDF): ${artifactUrl}`;
+            const body = [
+              "SolidSaaS scan complete.",
+              "",
+              "Report uploaded as GitHub Actions artifact.",
+              `Download reports (JSON, HTML, PDF): ${artifactUrl}`
+            ].join("\n");
 
             github.rest.issues.createComment({
               issue_number: prNumber,
