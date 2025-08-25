@@ -22,21 +22,31 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install Semgrep
-        run: pip install semgrep
+      - name: Install dependencies
+        run: |
+          pip install semgrep
+          sudo apt-get install -y wkhtmltopdf
+          npm install @actions/core @actions/github
 
       - name: Run Semgrep (JSON only)
         run: |
           semgrep scan --config .solid/extensions/semgrep --json > semgrep-results.json
 
-      - name: Upload Semgrep Reports
+      - name: Generate HTML and PDF Reports
+        run: |
+          mkdir -p reports
+          python .solid/scripts/convert_report.py semgrep-results.json reports/semgrep-report.html
+          wkhtmltopdf reports/semgrep-report.html reports/semgrep-report.pdf
+
+      - name: Bundle Reports into ZIP
+        run: |
+          zip solidsaas-report.zip semgrep-results.json reports/semgrep-report.html reports/semgrep-report.pdf
+
+      - name: Upload Semgrep Report ZIP
         uses: actions/upload-artifact@v4
         with:
           name: solidsaas-report
-          path: |
-            semgrep-results.json
-            semgrep-report.html
-            semgrep-report.pdf
+          path: solidsaas-report.zip
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -62,8 +72,12 @@ jobs:
             const body = [
               "SolidSaaS scan complete.",
               "",
-              "Report uploaded as GitHub Actions artifact.",
-              `Download reports (JSON, HTML, PDF): ${artifactUrl}`
+              "All reports bundled in a downloadable ZIP:",
+              "- semgrep-results.json",
+              "- semgrep-report.html",
+              "- semgrep-report.pdf",
+              "",
+              `Download artifact: ${artifactUrl}`
             ].join("\n");
 
             github.rest.issues.createComment({
